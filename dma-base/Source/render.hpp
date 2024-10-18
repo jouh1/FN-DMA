@@ -204,8 +204,6 @@ void render_menu()
     {
         ImGui::SetNextWindowSize({ 620, 350 });
         ImGui::Begin("FREE", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar);
-        ImGui::Text("IS\nLE");
-        ImGui::SameLine();
         if (ImGui::Button("Aimbot", { 190, 20 })) settings::tab = 0;
         ImGui::SameLine();
         if (ImGui::Button("Visuals", { 188, 20 })) settings::tab = 1;
