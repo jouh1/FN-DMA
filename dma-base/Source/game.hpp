@@ -36,50 +36,33 @@ uintptr_t text_selection;
 
 
 void local_pointers() {
-    auto scatter_handle = mem.CreateScatterHandle();
-
     while (true)
     {
-        // New UWorld // a
-
-        for (auto i = 2047482; i < 2147483; i++) {
-            auto text = cache::base + i * 0x1000;
-
-            uintptr_t uworld;
-            if (!mem.Read(text + offsets::UWORLD, &uworld, sizeof(uintptr_t))) continue;
-
-            uintptr_t ulevel;
-            if (!mem.Read(uworld + 0x30, &ulevel, sizeof(uintptr_t))) continue;
-
-            uintptr_t check;
-            if (ulevel != 0 && mem.Read(ulevel + 0xc0, &check, sizeof(uintptr_t)) && check == uworld) {
-                working_uworld = uworld;
-                text_selection = text;
-                break;
-            }
+        uintptr_t text_selection;
+        for (auto i = 0; i < 255; i++) {
+        	if (mem.Read<__int32>(cache::base + (i * 0x1000)) == 0x905A4D) {
+        		text_selection = cache::base + ((i + 1) * 0x1000);
+        	}
         }
-        // Reads
 
-        cache::uworld = mem.Read<uintptr_t>(offsets::UWORLD + text_selection);
-        if (cache::uworld) LOG("Found UWORLD: 0x%p\n", cache::uworld);
+        cache::uworld = mem.Read<uintptr_t>(text_selection + offsets::UWORLD);
         cache::game_instance = mem.Read<uintptr_t>(cache::uworld + offsets::GAME_INSTANCE);
         cache::game_state = mem.Read<uintptr_t>(cache::uworld + offsets::GAME_STATE);
         cache::local_players = mem.Read<uintptr_t>(mem.Read<uintptr_t>(cache::game_instance + offsets::LOCAL_PLAYERS));
         cache::player_controller = mem.Read<uintptr_t>(cache::local_players + offsets::PLAYER_CONTROLLER);
         cache::local_pawn = mem.Read<uintptr_t>(cache::player_controller + offsets::LOCAL_PAWN);
         cache::player_array = mem.Read<uintptr_t>(cache::game_state + offsets::PLAYER_ARRAY);
-
+        
         if (cache::local_pawn) {
-            mem.AddScatterReadRequest(scatter_handle, cache::local_pawn + offsets::PLAYER_STATE, &cache::player_state, sizeof(uintptr_t));
-            mem.AddScatterReadRequest(scatter_handle, cache::player_state + offsets::TEAM_INDEX, &cache::my_team_id, sizeof(int));
-            mem.AddScatterReadRequest(scatter_handle, cache::local_pawn + offsets::ROOT_COMPONENT, &cache::root_component, sizeof(uintptr_t));
+            cache::player_state = mem.Read<uintptr_t>(cache::local_pawn + offsets::PLAYER_STATE);
+            cache::my_team_id = mem.Read<int>(cache::player_state + offsets::TEAM_INDEX);
+            cache::root_component = mem.Read<uintptr_t>(cache::local_pawn + offsets::ROOT_COMPONENT);
         }
+        
+        cache::location_pointer = mem.Read<uintptr_t>(cache::uworld + 0x110);
+        cache::rotation_pointer = mem.Read<uintptr_t>(cache::uworld + 0x120);
 
-        mem.AddScatterReadRequest(scatter_handle, cache::uworld + 0x110, &cache::location_pointer, sizeof(uintptr_t));
-        mem.AddScatterReadRequest(scatter_handle, cache::uworld + 0x120, &cache::rotation_pointer, sizeof(uintptr_t));
-        mem.ExecuteReadScatter(scatter_handle);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(3500));
     }
 }
 
