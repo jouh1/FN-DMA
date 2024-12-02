@@ -1,5 +1,4 @@
 #pragma once
-#include "pch.h"
 #include "Registry.h"
 
 class c_keys
