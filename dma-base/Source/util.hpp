@@ -218,7 +218,7 @@ Camera get_view_point() {
 }
 
 Vector2 project_world_to_screen(const Vector3& world_location) {
-    cache::local_camera = get_view_point();
+
     D3DMATRIX temp_matrix = to_matrix(cache::local_camera.rotation);
 
     Vector3 vaxisx(temp_matrix.m[0][0], temp_matrix.m[0][1], temp_matrix.m[0][2]);
@@ -258,13 +258,6 @@ inline Vector3 GetBoneFT(FTransform bone, FTransform component_to_world) {
 
     D3DMATRIX matrix = matrix_multiplication(bone.to_matrix_with_scale(), component_to_world.to_matrix_with_scale());
     return Vector3(matrix._41, matrix._42, matrix._43);
-}
-
-
-bool is_visible(uintptr_t mesh) {
-    float last_submit_time = mem.Read<float>(mesh + offsets::LAST_SUMBIT_TIME);
-    float last_render_time_on_screen = mem.Read<float>(mesh + offsets::LAST_SUMBIT_TIME_ON_SCREEN);
-    return last_render_time_on_screen + 0.06f >= last_submit_time;
 }
 
 float custom_fabsf(float x) {
