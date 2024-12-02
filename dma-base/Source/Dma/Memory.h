@@ -1,9 +1,8 @@
 #pragma once
-#include "pch.h"
+#include <Pch.h>
 #include "InputManager.h"
 #include "Registry.h"
 #include "Shellcode.h"
-#include "../nt/structs.h"
 
 class Memory
 {
@@ -96,7 +95,6 @@ public:
 	* @return the process id of the process
 	*/
 	DWORD GetPidFromName(std::string process_name);
-
 	/**
 	* brief Gets all the processes id(s) of the process
 	* @param process_name the name of the process
@@ -117,12 +115,10 @@ public:
 	*/
 	VMMDLL_PROCESS_INFORMATION GetProcessInformation();
 
-
 	/**
 	* \brief Gets the process peb
 	* \return the process peb
 	*/
-	PEB GetProcessPeb();
 
 	/**
 	* brief Gets the base address of the process
@@ -211,13 +207,6 @@ public:
 		Write(address, &value, sizeof(T));
 	}
 
-	/**
-	* brief Reads memory from the process
-	* @param address The address to read from
-	* @param buffer The buffer to read to
-	* @param size The size of the buffer
-	* @return true if successful, false if not.
-	*/
 	bool Read(uintptr_t address, void* buffer, size_t size) const;
 	bool Read(uintptr_t address, void* buffer, size_t size, int pid) const;
 
@@ -265,11 +254,32 @@ public:
 	}
 
 	/**
+	* brief Reads a chain of offsets from the address
+	* @param address The address to read from
+	* @param a vector of offset values to read through
+	* @return the value read from the chain
+	*/
+	uint64_t ReadChain(uint64_t base, const std::vector<uint64_t>& offsets)
+	{
+		uint64_t result = Read<uint64_t>(base + offsets.at(0));
+		for (int i = 1; i < offsets.size(); i++) result = Read<uint64_t>(result + offsets.at(i));
+		return result;
+	}
+
+	template <typename T>
+	T ReadChain(uint64_t base, const std::vector<uint64_t>& offsets)
+	{
+		T result = Read<T>(base + offsets.at(0));
+		for (int i = 1; i < offsets.size(); i++) result = Read<T>(result + offsets.at(i));
+		return result;
+	}
+
+	/**
 	 * \brief Create a scatter handle, this is used for scatter read/write requests
 	 * \return Scatter handle
 	 */
-	VMMDLL_SCATTER_HANDLE CreateScatterHandle();
-	VMMDLL_SCATTER_HANDLE CreateScatterHandle(int pid);
+	VMMDLL_SCATTER_HANDLE CreateScatterHandle() const;
+	VMMDLL_SCATTER_HANDLE CreateScatterHandle(int pid) const;
 
 	/**
 	 * \brief Closes the scatter handle
@@ -285,7 +295,15 @@ public:
 	 * \param size the size of buffer
 	 */
 	void AddScatterReadRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, void* buffer, size_t size);
+
+	template <typename T>
+	void AddScatterReadRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, T* buffer)
+	{
+		AddScatterReadRequest(handle, address, reinterpret_cast<void*>(buffer), sizeof(T));
+	}
+
 	void AddScatterWriteRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, void* buffer, size_t size);
+
 
 	/**
 	 * \brief Executes all prepared scatter requests, note if you created a scatter handle with a pid
