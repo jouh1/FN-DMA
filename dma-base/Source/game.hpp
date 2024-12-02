@@ -32,20 +32,12 @@ std::vector<EntityData> entities;
 std::vector<EntityData> temp_entities;
 std::mutex entities_mutex;
 uintptr_t working_uworld;
-uintptr_t text_selection;
 
 
 void local_pointers() {
     while (true)
     {
-        uintptr_t text_selection;
-        for (auto i = 0; i < 255; i++) {
-        	if (mem.Read<__int32>(cache::base + (i * 0x1000)) == 0x905A4D) {
-        		text_selection = cache::base + ((i + 1) * 0x1000);
-        	}
-        }
-
-        cache::uworld = mem.Read<uintptr_t>(text_selection + offsets::UWORLD);
+        cache::uworld = mem.Read<uintptr_t>(cache::base + offsets::UWORLD);
         cache::game_instance = mem.Read<uintptr_t>(cache::uworld + offsets::GAME_INSTANCE);
         cache::game_state = mem.Read<uintptr_t>(cache::uworld + offsets::GAME_STATE);
         cache::local_players = mem.Read<uintptr_t>(mem.Read<uintptr_t>(cache::game_instance + offsets::LOCAL_PLAYERS));
@@ -59,8 +51,8 @@ void local_pointers() {
             cache::root_component = mem.Read<uintptr_t>(cache::local_pawn + offsets::ROOT_COMPONENT);
         }
         
-        cache::location_pointer = mem.Read<uintptr_t>(cache::uworld + 0x110);
-        cache::rotation_pointer = mem.Read<uintptr_t>(cache::uworld + 0x120);
+        cache::location_pointer = mem.Read<uintptr_t>(cache::uworld + 0x130);
+        cache::rotation_pointer = mem.Read<uintptr_t>(cache::uworld + 0x140);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(3500));
     }
@@ -81,7 +73,7 @@ void EntityLoop()
 
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-        cache::player_count = mem.Read<int>(cache::game_state + (offsets::PLAYER_ARRAY + sizeof(uintptr_t)));
+        cache::player_count = mem.Read<int>(cache::game_state + offsets::PLAYER_ARRAY + sizeof(uintptr_t));
 
         if (cache::player_count <= 0 || cache::player_count > 200) return;
 
@@ -117,7 +109,7 @@ void EntityLoop()
             PlayerData& data = temp_player_data[i];
             if (data.mesh) {
                 mem.AddScatterReadRequest(handle, data.mesh + offsets::BONE_ARRAY, &data.bone_array, sizeof(uintptr_t));
-                mem.AddScatterReadRequest(handle, data.mesh + offsets::BONE_ARRAY + 0x10, &data.bone_array_cache, sizeof(uintptr_t));
+                mem.AddScatterReadRequest(handle, data.mesh + offsets::BONE_ARRAY_CACHE, &data.bone_array_cache, sizeof(uintptr_t));
             }
         }
 
@@ -165,6 +157,7 @@ void draw_entities() {
     float closest_meter_distance = FLT_MAX;
     uintptr_t closest_mesh = NULL;
     Vector3 closest_bone = { 0, 0 ,0 };
+    double seconds;
 
     if (entities.empty()) {
         return;
@@ -184,7 +177,7 @@ void draw_entities() {
     mem.AddScatterReadRequest(entityScatter, cache::rotation_pointer, &fnrot.a, sizeof(double));
     mem.AddScatterReadRequest(entityScatter, cache::rotation_pointer + 0x20, &fnrot.b, sizeof(double));
     mem.AddScatterReadRequest(entityScatter, cache::rotation_pointer + 0x1d0, &fnrot.c, sizeof(double));
-    mem.AddScatterReadRequest(entityScatter, cache::player_controller + 0x394, &fov, sizeof(float));
+    mem.AddScatterReadRequest(entityScatter, cache::player_controller + 0x3ac, &fov, sizeof(float));
 
     size_t entityCount = std::min(entities.size(), MAX_ENTITIES);
 
@@ -200,10 +193,10 @@ void draw_entities() {
         mem.AddScatterReadRequest(entityScatter, entity.mesh + offsets::COMPONENT_TO_WORLD, &comp2Worlds[i], sizeof(FTransform));
 
         mem.AddScatterReadRequest(entityScatter, entity.pawn_private + offsets::IS_DYING, &isDyingFlags[i], sizeof(BYTE));
-        mem.AddScatterReadRequest(entityScatter, entity.pawn_private + offsets::LAST_SUMBIT_TIME, &lastSubmitTimes[i], sizeof(BYTE));
-        mem.AddScatterReadRequest(entityScatter, entity.pawn_private + offsets::LAST_SUMBIT_TIME_ON_SCREEN, &lastRenderTimes[i], sizeof(BYTE));
+        mem.AddScatterReadRequest(entityScatter, entity.pawn_private + 0x30C, &lastRenderTimes[i], sizeof(float));
 
     }
+    mem.AddScatterReadRequest(entityScatter, cache::uworld + 0x150, &seconds, sizeof(double));
 
     mem.ExecuteReadScatter(entityScatter);
 
@@ -226,7 +219,7 @@ void draw_entities() {
         int box_width = static_cast<int>(box_height * 0.50f);
         float distance = bottom3d.distance(cache::local_camera.location) / 100.0f;
 
-        bool is_vis = lastRenderTimes[i] + 0.06f >= lastSubmitTimes[i];
+        bool is_vis = seconds - lastRenderTimes[i] <= 0.06f;
 
         ImColor box_color = is_vis 
             ? ImColor(settings::visuals::boxColor[0], settings::visuals::boxColor[1], settings::visuals::boxColor[2], settings::visuals::boxColor[3])
