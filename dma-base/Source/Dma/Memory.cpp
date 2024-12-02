@@ -6,7 +6,6 @@
 
 Memory::Memory()
 {
-	LOG("loading libraries...\n");
 	modules.VMM = LoadLibraryA("vmm.dll");
 	modules.FTD3XX = LoadLibraryA("FTD3XX.dll");
 	modules.LEECHCORE = LoadLibraryA("leechcore.dll");
@@ -16,11 +15,11 @@ Memory::Memory()
 		LOG("vmm: %p\n", modules.VMM);
 		LOG("ftd: %p\n", modules.FTD3XX);
 		LOG("leech: %p\n", modules.LEECHCORE);
+		THROW("[!] Could not load a library\n");
 	}
 
 	this->key = std::make_shared<c_keys>();
 
-	LOG("Successfully loaded libraries!\n");
 }
 
 Memory::~Memory()
@@ -32,15 +31,15 @@ Memory::~Memory()
 
 bool Memory::DumpMemoryMap(bool debug)
 {
-	LPSTR args[] = { (LPSTR)"", (LPSTR)"-device", (LPSTR)"fpga://algo=0", (LPSTR)"", (LPSTR)"" };
+	LPCSTR args[] = { const_cast<LPCSTR>(""), const_cast<LPCSTR>("-device"), const_cast<LPCSTR>("fpga://algo=0"), const_cast<LPCSTR>(""), const_cast<LPCSTR>("") };
 	int argc = 3;
 	if (debug)
 	{
-		args[argc++] = (LPSTR)"-v";
-		args[argc++] = (LPSTR)"-printf";
+		args[argc++] = const_cast<LPCSTR>("-v");
+		args[argc++] = const_cast<LPCSTR>("-printf");
 	}
 
-	VMM_HANDLE handle = VMMDLL_Initialize(argc, args);
+	VMM_HANDLE handle = VMMDLL_Initialize(argc, (LPCSTR*)args);
 	if (!handle)
 	{
 		LOG("[!] Failed to open a VMM Handle\n");
@@ -74,7 +73,7 @@ bool Memory::DumpMemoryMap(bool debug)
 	std::stringstream sb;
 	for (DWORD i = 0; i < pPhysMemMap->cMap; i++)
 	{
-		sb << std::setfill('0') << std::setw(4) << i << "  " << std::hex << pPhysMemMap->pMap[i].pa << "  -  " << (pPhysMemMap->pMap[i].pa + pPhysMemMap->pMap[i].cb - 1) << "  ->  " << pPhysMemMap->pMap[i].pa << std::endl;
+		sb << std::hex << pPhysMemMap->pMap[i].pa << " " << (pPhysMemMap->pMap[i].pa + pPhysMemMap->pMap[i].cb - 1) << std::endl;
 	}
 
 	auto temp_path = std::filesystem::temp_directory_path();
@@ -94,19 +93,12 @@ unsigned char abort2[4] = { 0x10, 0x00, 0x10, 0x00 };
 
 bool Memory::SetFPGA()
 {
-	bool result;
-	ULONG64 qwID = 0;
-	ULONG64 qwVersionMajor = 0;
-	ULONG64 qwVersionMinor = 0;
+	ULONG64 qwID = 0, qwVersionMajor = 0, qwVersionMinor = 0;
 	if (!VMMDLL_ConfigGet(this->vHandle, LC_OPT_FPGA_FPGA_ID, &qwID) && VMMDLL_ConfigGet(this->vHandle, LC_OPT_FPGA_VERSION_MAJOR, &qwVersionMajor) && VMMDLL_ConfigGet(this->vHandle, LC_OPT_FPGA_VERSION_MINOR, &qwVersionMinor))
 	{
 		LOG("[!] Failed to lookup FPGA device, Attempting to proceed\n\n");
 		return false;
 	}
-
-	LOG("[+] VMMDLL_ConfigGet");
-	LOG(" ID = %lli", qwID);
-	LOG(" VERSION = %lli.%lli\n", qwVersionMajor, qwVersionMinor);
 
 	if ((qwVersionMajor >= 4) && ((qwVersionMajor >= 5) || (qwVersionMinor >= 7)))
 	{
@@ -119,7 +111,7 @@ bool Memory::SetFPGA()
 			return false;
 		}
 
-		LcCommand(handle, LC_CMD_FPGA_CFGREGPCIE_MARKWR | 0x002, 4, (PBYTE)&abort2, NULL, NULL);
+		LcCommand(handle, LC_CMD_FPGA_CFGREGPCIE_MARKWR | 0x002, 4, reinterpret_cast<PBYTE>(&abort2), NULL, NULL);
 		LOG("[-] Register auto cleared\n");
 		LcClose(handle);
 	}
@@ -127,18 +119,19 @@ bool Memory::SetFPGA()
 	return true;
 }
 
+
 bool Memory::Init(std::string process_name, bool memMap, bool debug)
 {
 	if (!DMA_INITIALIZED)
 	{
 		LOG("inizializing...\n");
 	reinit:
-		LPSTR args[] = { (LPSTR)"", (LPSTR)"-device", (LPSTR)"fpga://algo=0", (LPSTR)"", (LPSTR)"", (LPSTR)"", (LPSTR)"" };
+		LPCSTR args[] = { const_cast<LPCSTR>(""), const_cast<LPCSTR>("-device"), const_cast<LPCSTR>("fpga://algo=0"), const_cast<LPCSTR>(""), const_cast<LPCSTR>(""), const_cast<LPCSTR>(""), const_cast<LPCSTR>("") };
 		DWORD argc = 3;
 		if (debug)
 		{
-			args[argc++] = (LPSTR)"-v";
-			args[argc++] = (LPSTR)"-printf";
+			args[argc++] = const_cast<LPCSTR>("-v");
+			args[argc++] = const_cast<LPCSTR>("-printf");
 		}
 
 		std::string path = "";
@@ -151,7 +144,6 @@ bool Memory::Init(std::string process_name, bool memMap, bool debug)
 				dumped = this->DumpMemoryMap(debug);
 			else
 				dumped = true;
-			LOG("dumping memory map to file...\n");
 			if (!dumped)
 			{
 				LOG("[!] ERROR: Could not dump memory map!\n");
@@ -159,83 +151,62 @@ bool Memory::Init(std::string process_name, bool memMap, bool debug)
 			}
 			else
 			{
-				LOG("Dumped memory map!\n");
-
 				//Add the memory map to the arguments and increase arg count.
-				args[argc++] = (LPSTR)"-memmap";
-				args[argc++] = (LPSTR)path.c_str();
+				args[argc++] = const_cast<LPSTR>("-memmap");
+				args[argc++] = const_cast<LPSTR>(path.c_str());
 			}
 		}
-		this->vHandle = VMMDLL_Initialize(argc, args);
+		this->vHandle = VMMDLL_Initialize(argc, (LPCSTR*)args);
 		if (!this->vHandle)
 		{
 			if (memMap)
 			{
 				memMap = false;
-				LOG("[!] Initialization failed with Memory map? Try without MMap\n");
 				goto reinit;
 			}
-			LOG("[!] Initialization failed! Is the DMA in use or disconnected?\n");
 			return false;
 		}
 
-		ULONG64 FPGA_ID, DEVICE_ID;
+		ULONG64 FPGA_ID = 0, DEVICE_ID = 0;
 
 		VMMDLL_ConfigGet(this->vHandle, LC_OPT_FPGA_FPGA_ID, &FPGA_ID);
 		VMMDLL_ConfigGet(this->vHandle, LC_OPT_FPGA_DEVICE_ID, &DEVICE_ID);
 
-		LOG("FPGA ID: %llu\n", FPGA_ID);
-		LOG("DEVICE ID: %llu\n", DEVICE_ID);
 		LOG("success!\n");
 
 		if (!this->SetFPGA())
 		{
-			LOG("[!] Could not set FPGA!\n");
 			VMMDLL_Close(this->vHandle);
 			return false;
 		}
 
 		DMA_INITIALIZED = TRUE;
 	}
-	else
-		LOG("DMA already initialized!\n");
 
 	if (PROCESS_INITIALIZED)
 	{
-		LOG("Process already initialized!\n");
 		return true;
 	}
 
-	this->current_process.PID = GetPidFromName(process_name);
-	if (!this->current_process.PID)
+	current_process.PID = GetPidFromName(process_name);
+	if (!current_process.PID)
 	{
-		LOG("[!] Could not get PID from name!\n");
+		return false;
+	};
+
+	//mem.FixCr3();
+
+	current_process.base_address = GetBaseDaddy(process_name);
+	if (!current_process.base_address)
+	{
 		return false;
 	}
-	this->current_process.process_name = process_name;
-	bool success = false;
 
-	while (!success) {
-
-		mem.FixCr3();
-
-		current_process.base_address = GetBaseDaddy(process_name);
-		if (!current_process.base_address) {
-			continue;
-		}
-
-		current_process.base_size = GetBaseSize(process_name);
-		if (!current_process.base_size) {
-			continue;
-		}
-
-		success = true;
+	current_process.base_size = GetBaseSize(process_name);
+	if (!current_process.base_size)
+	{
+		return false;
 	}
-
-	LOG("Process information of %s\n", process_name.c_str());
-	LOG("PID: %i\n", this->current_process.PID);
-	LOG("Base Address: 0x%p\n", this->current_process.base_address);
-	LOG("Base Size: 0x%p\n", this->current_process.base_size);
 
 	PROCESS_INITIALIZED = TRUE;
 
@@ -257,7 +228,6 @@ std::vector<int> Memory::GetPidListFromName(std::string name)
 
 	if (!VMMDLL_ProcessGetInformationAll(this->vHandle, &process_info, &total_processes))
 	{
-		LOG("[!] Failed to get process list\n");
 		return list;
 	}
 
@@ -267,17 +237,15 @@ std::vector<int> Memory::GetPidListFromName(std::string name)
 		if (strstr(process.szNameLong, name.c_str()))
 			list.push_back(process.dwPID);
 	}
-
 	return list;
 }
 
 std::vector<std::string> Memory::GetModuleList(std::string process_name)
 {
 	std::vector<std::string> list = { };
-	PVMMDLL_MAP_MODULE module_info;
-	if (!VMMDLL_Map_GetModuleU(this->vHandle, this->current_process.PID, &module_info, VMMDLL_MODULE_FLAG_NORMAL))
+	PVMMDLL_MAP_MODULE module_info = NULL;
+	if (!VMMDLL_Map_GetModuleU(this->vHandle, current_process.PID, &module_info, VMMDLL_MODULE_FLAG_NORMAL))
 	{
-		LOG("[!] Failed to get module list\n");
 		return list;
 	}
 
@@ -292,32 +260,18 @@ std::vector<std::string> Memory::GetModuleList(std::string process_name)
 
 VMMDLL_PROCESS_INFORMATION Memory::GetProcessInformation()
 {
-	VMMDLL_PROCESS_INFORMATION info;
+	VMMDLL_PROCESS_INFORMATION info = { };
 	SIZE_T process_information = sizeof(VMMDLL_PROCESS_INFORMATION);
 	ZeroMemory(&info, sizeof(VMMDLL_PROCESS_INFORMATION));
 	info.magic = VMMDLL_PROCESS_INFORMATION_MAGIC;
 	info.wVersion = VMMDLL_PROCESS_INFORMATION_VERSION;
 
-	if (!VMMDLL_ProcessGetInformation(this->vHandle, this->current_process.PID, &info, &process_information))
+	if (!VMMDLL_ProcessGetInformation(this->vHandle, current_process.PID, &info, &process_information))
 	{
-		LOG("[!] Failed to find process information\n");
 		return { };
 	}
 
-	LOG("[+] Found process information\n");
 	return info;
-}
-
-PEB Memory::GetProcessPeb()
-{
-	auto info = GetProcessInformation();
-	if (info.win.vaPEB)
-	{
-		LOG("[+] Found process PEB ptr at 0x%p\n", info.win.vaPEB);
-		return Read<PEB>(info.win.vaPEB);
-	}
-	LOG("[!] Failed to find the processes PEB\n");
-	return { };
 }
 
 size_t Memory::GetBaseDaddy(std::string module_name)
@@ -325,13 +279,11 @@ size_t Memory::GetBaseDaddy(std::string module_name)
 	std::wstring str(module_name.begin(), module_name.end());
 
 	PVMMDLL_MAP_MODULEENTRY module_info;
-	if (!VMMDLL_Map_GetModuleFromNameW(this->vHandle, this->current_process.PID, (LPWSTR)str.c_str(), &module_info, VMMDLL_MODULE_FLAG_NORMAL))
+	if (!VMMDLL_Map_GetModuleFromNameW(this->vHandle, current_process.PID, const_cast<LPWSTR>(str.c_str()), &module_info, VMMDLL_MODULE_FLAG_NORMAL))
 	{
-		LOG("[!] Couldn't find Base Address for %s\n", module_name.c_str());
 		return 0;
 	}
 
-	LOG("[+] Found Base Address for %s at 0x%p\n", module_name.c_str(), module_info->vaBase);
 	return module_info->vaBase;
 }
 
@@ -340,10 +292,9 @@ size_t Memory::GetBaseSize(std::string module_name)
 	std::wstring str(module_name.begin(), module_name.end());
 
 	PVMMDLL_MAP_MODULEENTRY module_info;
-	auto bResult = VMMDLL_Map_GetModuleFromNameW(this->vHandle, this->current_process.PID, (LPWSTR)str.c_str(), &module_info, VMMDLL_MODULE_FLAG_NORMAL);
+	auto bResult = VMMDLL_Map_GetModuleFromNameW(this->vHandle, current_process.PID, const_cast<LPWSTR>(str.c_str()), &module_info, VMMDLL_MODULE_FLAG_NORMAL);
 	if (bResult)
 	{
-		LOG("[+] Found Base Size for %s at 0x%p\n", module_name.c_str(), module_info->cbImageSize);
 		return module_info->cbImageSize;
 	}
 	return 0;
@@ -352,8 +303,8 @@ size_t Memory::GetBaseSize(std::string module_name)
 uintptr_t Memory::GetExportTableAddress(std::string import, std::string process, std::string module)
 {
 	PVMMDLL_MAP_EAT eat_map = NULL;
-	PVMMDLL_MAP_EATENTRY export_entry;
-	bool result = VMMDLL_Map_GetEATU(mem.vHandle, mem.GetPidFromName(process) /*| VMMDLL_PID_PROCESS_WITH_KERNELMEMORY*/, (LPSTR)module.c_str(), &eat_map);
+	PVMMDLL_MAP_EATENTRY export_entry = NULL;
+	bool result = VMMDLL_Map_GetEATU(mem.vHandle, mem.GetPidFromName(process) /*| VMMDLL_PID_PROCESS_WITH_KERNELMEMORY*/, const_cast<LPSTR>(module.c_str()), &eat_map);
 	if (!result)
 	{
 		LOG("[!] Failed to get Export Table\n");
@@ -388,8 +339,8 @@ uintptr_t Memory::GetExportTableAddress(std::string import, std::string process,
 uintptr_t Memory::GetImportTableAddress(std::string import, std::string process, std::string module)
 {
 	PVMMDLL_MAP_IAT iat_map = NULL;
-	PVMMDLL_MAP_IATENTRY import_entry;
-	bool result = VMMDLL_Map_GetIATU(mem.vHandle, mem.GetPidFromName(process) /*| VMMDLL_PID_PROCESS_WITH_KERNELMEMORY*/, (LPSTR)module.c_str(), &iat_map);
+	PVMMDLL_MAP_IATENTRY import_entry = NULL;
+	bool result = VMMDLL_Map_GetIATU(mem.vHandle, mem.GetPidFromName(process) /*| VMMDLL_PID_PROCESS_WITH_KERNELMEMORY*/, const_cast<LPSTR>(module.c_str()), &iat_map);
 	if (!result)
 	{
 		LOG("[!] Failed to get Import Table\n");
@@ -423,7 +374,7 @@ uintptr_t Memory::GetImportTableAddress(std::string import, std::string process,
 
 uint64_t cbSize = 0x80000;
 //callback for VfsFileListU
-VOID cbAddFile(_Inout_ HANDLE h, _In_ LPSTR uszName, _In_ ULONG64 cb, _In_opt_ PVMMDLL_VFS_FILELIST_EXINFO pExInfo)
+VOID cbAddFile(_Inout_ HANDLE h, _In_ LPCSTR uszName, _In_ ULONG64 cb, _In_opt_ PVMMDLL_VFS_FILELIST_EXINFO pExInfo)
 {
 	if (strcmp(uszName, "dtb.txt") == 0)
 		cbSize = cb;
@@ -440,13 +391,12 @@ struct Info
 
 bool Memory::FixCr3()
 {
-	PVMMDLL_MAP_MODULEENTRY module_entry;
-	bool result = VMMDLL_Map_GetModuleFromNameU(this->vHandle, this->current_process.PID, (LPSTR)this->current_process.process_name.c_str(), &module_entry, NULL);
-	if (result)
-		return true; //Doesn't need to be patched lol
+	PVMMDLL_MAP_MODULEENTRY module_entry = NULL;
+	bool result = false;
 
 	if (!VMMDLL_InitializePlugins(this->vHandle))
 	{
+		LOG("[-] Failed VMMDLL_InitializePlugins call\n");
 		return false;
 	}
 
@@ -457,8 +407,8 @@ bool Memory::FixCr3()
 	{
 		BYTE bytes[4] = { 0 };
 		DWORD i = 0;
-		auto nt = VMMDLL_VfsReadW(this->vHandle, (LPWSTR)L"\\misc\\procinfo\\progress_percent.txt", bytes, 3, &i, 0);
-		if (nt == VMMDLL_STATUS_SUCCESS && atoi((LPSTR)bytes) == 100)
+		auto nt = VMMDLL_VfsReadW(this->vHandle, const_cast<LPWSTR>(L"\\misc\\procinfo\\progress_percent.txt"), bytes, 3, &i, 0);
+		if (nt == VMMDLL_STATUS_SUCCESS && atoi(reinterpret_cast<LPSTR>(bytes)) == 100)
 			break;
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -468,9 +418,9 @@ bool Memory::FixCr3()
 	VfsFileList.dwVersion = VMMDLL_VFS_FILELIST_VERSION;
 	VfsFileList.h = 0;
 	VfsFileList.pfnAddDirectory = 0;
-	VfsFileList.pfnAddFile = cbAddFile; //dumb af callback who made this system
+	VfsFileList.pfnAddFile = cbAddFile;
 
-	result = VMMDLL_VfsListU(this->vHandle, (LPSTR)"\\misc\\procinfo\\", &VfsFileList);
+	result = VMMDLL_VfsListU(this->vHandle, const_cast<LPSTR>("\\misc\\procinfo\\"), &VfsFileList);
 	if (!result)
 		return false;
 
@@ -478,14 +428,14 @@ bool Memory::FixCr3()
 	const size_t buffer_size = cbSize;
 	std::unique_ptr<BYTE[]> bytes(new BYTE[buffer_size]);
 	DWORD j = 0;
-	auto nt = VMMDLL_VfsReadW(this->vHandle, (LPWSTR)L"\\misc\\procinfo\\dtb.txt", bytes.get(), buffer_size - 1, &j, 0);
+	auto nt = VMMDLL_VfsReadW(this->vHandle, const_cast<LPWSTR>(L"\\misc\\procinfo\\dtb.txt"), bytes.get(), buffer_size - 1, &j, 0);
 	if (nt != VMMDLL_STATUS_SUCCESS)
 		return false;
 
-	std::vector<uint64_t> possible_dtbs;
+	std::vector<uint64_t> possible_dtbs = { };
 	std::string lines(reinterpret_cast<char*>(bytes.get()));
 	std::istringstream iss(lines);
-	std::string line;
+	std::string line = "";
 
 	while (std::getline(iss, line))
 	{
@@ -496,16 +446,17 @@ bool Memory::FixCr3()
 		{
 			if (info.process_id == 0) //parts that lack a name or have a NULL pid are suspects
 				possible_dtbs.push_back(info.dtb);
-			if (this->current_process.process_name.find(info.name) != std::string::npos)
+			if (current_process.process_name.find(info.name) != std::string::npos)
 				possible_dtbs.push_back(info.dtb);
 		}
 	}
 
+	//loop over possible dtbs and set the config to use it til we find the correct one
 	for (size_t i = 0; i < possible_dtbs.size(); i++)
 	{
 		auto dtb = possible_dtbs[i];
-		VMMDLL_ConfigSet(this->vHandle, VMMDLL_OPT_PROCESS_DTB | this->current_process.PID, dtb);
-		result = VMMDLL_Map_GetModuleFromNameU(this->vHandle, this->current_process.PID, (LPSTR)this->current_process.process_name.c_str(), &module_entry, NULL);
+		VMMDLL_ConfigSet(this->vHandle, VMMDLL_OPT_PROCESS_DTB | current_process.PID, dtb);
+		result = VMMDLL_Map_GetModuleFromNameU(this->vHandle, current_process.PID, const_cast<LPSTR>(current_process.process_name.c_str()), &module_entry, NULL);
 		if (result)
 		{
 			LOG("[+] Patched DTB\n");
@@ -520,7 +471,7 @@ bool Memory::FixCr3()
 bool Memory::DumpMemory(uintptr_t address, std::string path)
 {
 	LOG("[!] Memory dumping currently does not rebuild the IAT table, imports will be missing from the dump.\n");
-	IMAGE_DOS_HEADER dos;
+	IMAGE_DOS_HEADER dos{ };
 	Read(address, &dos, sizeof(IMAGE_DOS_HEADER));
 
 	//Check if memory has a PE 
@@ -556,6 +507,9 @@ bool Memory::DumpMemory(uintptr_t address, std::string path)
 		sections->PointerToRawData = sections->VirtualAddress;
 		sections->SizeOfRawData = sections->Misc.VirtualSize;
 	}
+
+	auto debug = (PIMAGE_DEBUG_DIRECTORY)(target.get() + nt_header->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress);
+	debug->PointerToRawData = debug->AddressOfRawData;
 
 	//Find all modules used by this process
 	//auto descriptor = Read<IMAGE_IMPORT_DESCRIPTOR>(address + ntHeader->OptionalHeader.DataDirectory[1].VirtualAddress);
@@ -645,7 +599,7 @@ static const char* hexdigits =
 
 static uint8_t GetByte(const char* hex)
 {
-	return (uint8_t)((hexdigits[hex[0]] << 4) | (hexdigits[hex[1]]));
+	return static_cast<uint8_t>((hexdigits[hex[0]] << 4) | (hexdigits[hex[1]]));
 }
 
 uint64_t Memory::FindSignature(const char* signature, uint64_t range_start, uint64_t range_end, int PID)
@@ -654,7 +608,7 @@ uint64_t Memory::FindSignature(const char* signature, uint64_t range_start, uint
 		return 0;
 
 	if (PID == 0)
-		PID = this->current_process.PID;
+		PID = current_process.PID;
 
 	std::vector<uint8_t> buffer(range_end - range_start);
 	if (!VMMDLL_MemReadEx(this->vHandle, PID, range_start, buffer.data(), buffer.size(), 0, VMMDLL_FLAG_NOCACHE))
@@ -686,7 +640,7 @@ uint64_t Memory::FindSignature(const char* signature, uint64_t range_start, uint
 
 bool Memory::Write(uintptr_t address, void* buffer, size_t size) const
 {
-	if (!VMMDLL_MemWrite(this->vHandle, this->current_process.PID, address, (PBYTE)buffer, size))
+	if (!VMMDLL_MemWrite(this->vHandle, current_process.PID, address, static_cast<PBYTE>(buffer), size))
 	{
 		LOG("[!] Failed to write Memory at 0x%p\n", address);
 		return false;
@@ -696,7 +650,7 @@ bool Memory::Write(uintptr_t address, void* buffer, size_t size) const
 
 bool Memory::Write(uintptr_t address, void* buffer, size_t size, int pid) const
 {
-	if (!VMMDLL_MemWrite(this->vHandle, pid, address, (PBYTE)buffer, size))
+	if (!VMMDLL_MemWrite(this->vHandle, pid, address, static_cast<PBYTE>(buffer), size))
 	{
 		LOG("[!] Failed to write Memory at 0x%p\n", address);
 		return false;
@@ -704,32 +658,45 @@ bool Memory::Write(uintptr_t address, void* buffer, size_t size, int pid) const
 	return true;
 }
 
+
+inline bool isKernel(uintptr_t ptr) {
+	return (ptr & 0xFFF0000000000000) == 0xFFF0000000000000;
+}
+
 bool Memory::Read(uintptr_t address, void* buffer, size_t size) const
 {
-	if (!VMMDLL_MemReadEx(this->vHandle, this->current_process.PID, address, (PBYTE)buffer, size, NULL, VMMDLL_FLAG_NOCACHE))
+	int pid = 4;
+
+	if (!isKernel(address))
+		pid = current_process.PID;
+
+	DWORD read_size = 0;
+	if (!VMMDLL_MemReadEx(this->vHandle, pid, address, static_cast<PBYTE>(buffer), size, &read_size, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL))
 	{
-		LOG("[!] Failed to read Memory at 0x%p\n", address);
 		return false;
 	}
-	return true;
+
+	return (read_size == size);
 }
 
 bool Memory::Read(uintptr_t address, void* buffer, size_t size, int pid) const
 {
-	if (!VMMDLL_MemReadEx(this->vHandle, pid, address, (PBYTE)buffer, size, NULL, VMMDLL_FLAG_NOCACHE))
+	DWORD read_size = 0;
+	if (!VMMDLL_MemReadEx(this->vHandle, pid, address, static_cast<PBYTE>(buffer), size, &read_size, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL))
 	{
-		LOG("[!] Failed to read Memory at 0x%p\n", address);
 		return false;
 	}
-	return true;
+	return (read_size == size);
 }
 
-VMMDLL_SCATTER_HANDLE Memory::CreateScatterHandle()
+VMMDLL_SCATTER_HANDLE Memory::CreateScatterHandle() const
 {
-	VMMDLL_SCATTER_HANDLE ScatterHandle = VMMDLL_Scatter_Initialize(this->vHandle, this->current_process.PID, VMMDLL_FLAG_NOCACHE);
-	if (!ScatterHandle)
-		LOG("[!] Failed to create scatter handle\n");
-	return ScatterHandle;
+	return VMMDLL_Scatter_Initialize(this->vHandle, current_process.PID, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL);
+}
+
+VMMDLL_SCATTER_HANDLE Memory::CreateScatterHandle(int pid) const
+{
+	return VMMDLL_Scatter_Initialize(this->vHandle, pid, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL);
 }
 
 void Memory::CloseScatterHandle(VMMDLL_SCATTER_HANDLE handle)
@@ -739,48 +706,29 @@ void Memory::CloseScatterHandle(VMMDLL_SCATTER_HANDLE handle)
 
 void Memory::AddScatterReadRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, void* buffer, size_t size)
 {
-	if (!VMMDLL_Scatter_PrepareEx(handle, address, size, static_cast<PBYTE>(buffer), NULL))
-	{
-		LOG("[!] Failed to prepare scatter read at 0x%p\n", address);
-	}
+	VMMDLL_Scatter_PrepareEx(handle, address, size, static_cast<PBYTE>(buffer), NULL);
 }
 
 void Memory::AddScatterWriteRequest(VMMDLL_SCATTER_HANDLE handle, uint64_t address, void* buffer, size_t size)
 {
-	if (!VMMDLL_Scatter_PrepareWrite(handle, address, (PBYTE)buffer, size))
-	{
-		LOG("[!] Failed to prepare scatter write at 0x%p\n", address);
-	}
+	VMMDLL_Scatter_PrepareWrite(handle, address, static_cast<PBYTE>(buffer), size);
 }
 
 void Memory::ExecuteReadScatter(VMMDLL_SCATTER_HANDLE handle, int pid)
 {
 	if (pid == 0)
-		pid = this->current_process.PID;
+		pid = current_process.PID;
 
-	if (!VMMDLL_Scatter_ExecuteRead(handle))
-	{
-		LOG("[-] Failed to Execute Scatter Read\n");
-	}
-	//Clear after using it
-	if (!VMMDLL_Scatter_Clear(handle, pid, NULL))
-	{
-		LOG("[-] Failed to clear Scatter\n");
-	}
+	VMMDLL_Scatter_ExecuteRead(handle);
+	VMMDLL_Scatter_Clear(handle, pid, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL);
 }
 
 void Memory::ExecuteWriteScatter(VMMDLL_SCATTER_HANDLE handle, int pid)
 {
 	if (pid == 0)
-		pid = this->current_process.PID;
+		pid = current_process.PID;
 
-	if (!VMMDLL_Scatter_Execute(handle))
-	{
-		LOG("[-] Failed to Execute Scatter Read\n");
-	}
-	//Clear after using it
-	if (!VMMDLL_Scatter_Clear(handle, pid, NULL))
-	{
-		LOG("[-] Failed to clear Scatter\n");
-	}
+	VMMDLL_Scatter_Execute(handle);
+
+	VMMDLL_Scatter_Clear(handle, pid, VMMDLL_FLAG_NOCACHE | VMMDLL_FLAG_ZEROPAD_ON_FAIL);
 }
